@@ -40,6 +40,8 @@ def args():
     p.add_argument("--meia_esp", type=float, default=7.5, help="espessura de cada metade [mm]")
     p.add_argument("--abraco", type=float, default=210.0, help="ângulo abraçado pelo C [°]")
     p.add_argument("--sobrecorte", type=float, default=0.6, help="quanto a ponta passa o Ø interior [mm]")
+    p.add_argument("--pega", type=float, default=95.0, help="comprimento da pega além do alojamento [mm] (0 = sem pega)")
+    p.add_argument("--pega_larg", type=float, default=26.0, help="largura da pega [mm]")
     # --- lâmina trapezoidal standard ---
     p.add_argument("--lam_comp", type=float, default=61.0)
     p.add_argument("--lam_alt", type=float, default=19.0)
@@ -142,6 +144,20 @@ def construir(a):
 
     meia = anel + aloj + guia
 
+    # pega radial no eixo da lâmina (empurrar = lâmina entra no vale; rodar = braço ~12 cm)
+    y_top = max(p[1] for p in CrossSection.batch_hull(blocos).to_polygons()[0])
+    if a.pega > 0:
+        r = a.pega_larg / 2
+        y0, y1 = Ro + 2, y_top + a.pega - r
+        perfil_pega = CrossSection.batch_hull([CrossSection.circle(r, 64).translate((0, y1)),
+                                               CrossSection.square((2 * r, 1)).translate((-r, y0))])
+        c = 2.0                                                     # chanfro nas arestas exteriores
+        pega = Manifold.batch_hull([extr(perfil_pega, 0, zt - c),
+                                    extr(perfil_pega.offset(-c, JoinType.Round), zt - c, zt)])
+        pega -= Manifold.cylinder(3 * zt, 3.5, 3.5, 48).translate((0, y1, -zt))   # furo para pendurar
+        pega -= Manifold.cylinder(3 * zt, Rb, Rb, SEG).translate((0, 0, -zt))
+        meia = meia + pega
+
     # furação M3: passagem Ø3,4; escareado Ø6,2 na A; porca sextavada 5,5 x 2,6 na B
     L_paraf = 2 * math.floor((2 * zt - 3.2) / 2)       # comprimento comercial (par) que cabe
     cb = 2 * zt - L_paraf - 0.6                         # ponta fica 0,6 dentro da face B -> 2 mm de rosca na porca
@@ -171,15 +187,33 @@ def construir(a):
     return A, B, lam3d, A_print, B_print, info
 
 
+def prato_compacto(A, B, gap=5.0):
+    pA = A.project().offset(gap / 2, JoinType.Round)
+    Br = B.rotate((0, 0, 180))
+    pB = Br.project().offset(gap / 2, JoinType.Round)
+    bA, bB = pA.bounds(), pB.bounds()
+    melhor = None
+    for dx in np.arange(bA[2] - bB[0] - 120, bA[2] - bB[0] + 1, 2.0):
+        for dy in np.arange(bA[3] - bB[3] - 120, bA[3] - bB[3] + 1, 2.0):
+            q = pB.translate((dx, dy))
+            if (pA ^ q).area() > 0.01:
+                continue
+            u = (pA + q).bounds()
+            dim = max(u[2] - u[0], u[3] - u[1])
+            if melhor is None or dim < melhor[0]:
+                melhor = (dim, dx, dy)
+    _, dx, dy = melhor
+    return A + Br.translate((dx, dy, 0))
+
+
 def main():
     a = args()
     A, B, lam3d, A_p, B_p, info = construir(a)
     out = a.saida
     stl(A_p, os.path.join(out, "meia_A.stl"))
     stl(B_p, os.path.join(out, "meia_B.stl"))
-    # prato único: A em cima, B em baixo (cabe numa mesa de 180 x 180)
-    bA, bB = A_p.bounding_box(), B_p.bounding_box()
-    prato = A_p + B_p.translate((0, bA[1] - bB[4] - 6, 0))
+    # prato único: B rodada 180° encaixada ao lado da pega da A (procura da posição mais compacta)
+    prato = prato_compacto(A_p, B_p)
     bp = prato.bounding_box()
     prato = prato.translate((-(bp[0] + bp[3]) / 2, -(bp[1] + bp[4]) / 2, 0))
     stl(prato, os.path.join(out, "prato_A_B.stl"))

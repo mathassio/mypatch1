@@ -6,7 +6,7 @@
 
 | Ficheiro | Conteúdo |
 |---|---|
-| `prato_A_B.stl` | as duas metades num só prato (106 × 172 mm), já orientadas |
+| `prato_A_B.stl` | **ficheiro único**: as duas metades com pega, já orientadas e encaixadas (168 × 178 mm, cabe numa mesa de 180 × 180) |
 | `meia_A.stl` / `meia_B.stl` | as mesmas metades em ficheiros separados |
 
 - **Material:** PETG ou ASA.
@@ -31,6 +31,8 @@
 3. Quando a lâmina perder o fio, vire-a para usar o outro canto. Depois, substitua-a.
 
 ## Geometria
+
+- **Pega:** radial, no eixo da lâmina, com 95 mm para além do alojamento e 26 × 15 mm de secção, arestas chanfradas e furo para pendurar. Empurrar a pega faz a lâmina entrar no vale; o braço de cerca de 12 cm facilita a rotação e mantém a mão longe do C.
 
 - **Guia:** fica no mesmo vale do corte, por isso a ferramenta funciona com qualquer passo de corrugado. Tem 2,5 mm na ponta, 3 mm abaixo da crista, e flancos a cerca de 50° até ao anel (imprime sem suportes).
 - **Anel:** apoia nas cristas dos dois lados do vale e mantém o corte perpendicular.
