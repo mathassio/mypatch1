@@ -1,44 +1,44 @@
 #!/usr/bin/env python3
 """Corta-tubos em C para conduta corrugada VMC Ø75 (HEATPEX 75/63) — modelo paramétrico.
 
-Gera STL para impressão 3D (PETG/ASA):
-  meia_A.stl        metade com alojamento da lâmina (cara de junta para cima)
-  meia_B.stl        metade tampa
-  teste_encaixe.stl anel com nervura + 7 pentes de passo (7,0-10,0), para validar medidas
+Gera os STL da ferramenta pronta a usar (PETG/ASA):
+  meia_A.stl   metade com rebaixo da lâmina e escareados M3
+  meia_B.stl   metade tampa com porcas M3
 
-Conceito: o corpo é dividido no plano de corte. A lâmina trapezoidal de x-ato
-(61 x 19 x 0,6 mm) fica entalada entre as duas metades, num rebaixo da metade A, e
-3 parafusos M3 fecham o conjunto. Duas nervuras com o perfil do O-ring de vedação
-entram nos vales vizinhos (±1 passo)
-e mantêm o corte perpendicular. Encaixa-se o tubo lateralmente, a ponta da lâmina
-fura o vale e depois roda-se a ferramenta no sentido da seta.
+Conceito
+  * Corpo em C, encaixe lateral, dividido no plano de corte em duas metades.
+  * Lâmina trapezoidal de x-ato standard (61 x 19 x 0,6) entalada num rebaixo da metade A;
+    3 parafusos M3 + porca fecham o conjunto.
+  * Guia anular no MESMO vale onde a lâmina corta (2,5 mm na ponta, 3 mm abaixo da crista,
+    flancos a ~50° até ao anel): localiza o corte no vale sem depender do passo do corrugado.
+  * O anel apoia nas cristas dos dois lados do vale e mantém o corte perpendicular.
 
 Eixo do tubo = Z. Plano de corte z = 0. Abertura do C virada para -Y, lâmina em +Y.
-Uso:  python3 corta_tubos.py --crista 75.6 --vale 65.2 --interior 62.5 --passo 8.3
+Uso:  python3 corta_tubos.py [--crista 76 --interior 62.5 --guia_larg 2.5 --guia_prof 3]
 """
 import argparse
 import math
 import os
 
 import numpy as np
-from manifold3d import CrossSection, JoinType, Manifold, OpType
+from manifold3d import CrossSection, JoinType, Manifold
 
 SEG = 256
 
 
 def args():
     p = argparse.ArgumentParser()
-    # --- medidas do tubo: CONFIRMAR COM PAQUÍMETRO ---
-    p.add_argument("--crista", type=float, default=76.0, help="Ø exterior nas cristas [mm]")
-    p.add_argument("--vale", type=float, default=65.5, help="Ø exterior no fundo do vale [mm]")
-    p.add_argument("--interior", type=float, default=62.5, help="Ø interior (parede lisa) [mm]")
-    p.add_argument("--passo", type=float, default=8.0, help="passo do corrugado [mm] (medir 10 passos / 10)")
-    # --- ferramenta ---
+    # --- tubo ---
+    p.add_argument("--crista", type=float, default=75.5, help="Ø exterior nas cristas [mm] (75-76 conforme marca)")
+    p.add_argument("--interior", type=float, default=62.5, help="Ø interior [mm]")
+    # --- guia no vale ---
+    p.add_argument("--guia_larg", type=float, default=2.5, help="largura da ponta da guia [mm]")
+    p.add_argument("--guia_prof", type=float, default=3.0, help="profundidade da guia abaixo da crista [mm]")
+    # --- corpo ---
     p.add_argument("--folga", type=float, default=0.4, help="folga radial nas cristas [mm]")
     p.add_argument("--parede", type=float, default=5.0, help="espessura radial do anel [mm]")
+    p.add_argument("--meia_esp", type=float, default=7.5, help="espessura de cada metade [mm]")
     p.add_argument("--abraco", type=float, default=210.0, help="ângulo abraçado pelo C [°]")
-    p.add_argument("--oring", type=float, default=4.0, help="corda do O-ring de vedação que assenta no vale [mm]")
-    p.add_argument("--folga_oring", type=float, default=0.2, help="folga por lado da nervura no vale [mm]")
     p.add_argument("--sobrecorte", type=float, default=0.6, help="quanto a ponta passa o Ø interior [mm]")
     # --- lâmina trapezoidal standard ---
     p.add_argument("--lam_comp", type=float, default=61.0)
@@ -50,9 +50,9 @@ def args():
     return p.parse_args()
 
 
-# ---------------------------------------------------------------- utilitários 2D
-def pol(cs_pts):
-    return CrossSection([cs_pts])
+# ---------------------------------------------------------------- utilitários
+def pol(pts):
+    return CrossSection([pts])
 
 
 def c_perfil(rin, rout, abraco, chanfro=3.0):
@@ -60,10 +60,8 @@ def c_perfil(rin, rout, abraco, chanfro=3.0):
     h = math.radians((360 - abraco) / 2)
     a0, a1 = -math.pi / 2 + h, 3 * math.pi / 2 - h
     d = chanfro / rin
-    pts = []
-    for i in range(SEG + 1):
-        a = a0 + (a1 - a0) * i / SEG
-        pts.append((rout * math.cos(a), rout * math.sin(a)))
+    pts = [(rout * math.cos(a0 + (a1 - a0) * i / SEG), rout * math.sin(a0 + (a1 - a0) * i / SEG))
+           for i in range(SEG + 1)]
     pts.append(((rin + chanfro) * math.cos(a1), (rin + chanfro) * math.sin(a1)))
     for i in range(SEG + 1):
         a = (a1 - d) + ((a0 + d) - (a1 - d)) * i / SEG
@@ -102,60 +100,26 @@ def stl(man, path):
 
 
 # ---------------------------------------------------------------- modelo
-# ---------------------------------------------------------------- pentes de passo
-PASSOS_TESTE = [7.0, 7.5, 8.0, 8.5, 9.0, 9.5, 10.0]
-SEG7 = {"0": "abcdef", "1": "bc", "2": "abged", "3": "abgcd", "4": "fgbc", "5": "afgcd",
-        "6": "afgedc", "7": "abc", "8": "abcdefg", "9": "abcdfg"}
-
-
-def texto7(txt, h=5.0, e=0.9):
-    """Texto em 7 segmentos (só dígitos e ponto), canto inferior esquerdo em (0,0)."""
-    w = h * 0.55
-    seg = {"a": (0, h - e, w, e), "b": (w - e, h / 2, e, h / 2), "c": (w - e, 0, e, h / 2),
-           "d": (0, 0, w, e), "e": (0, 0, e, h / 2), "f": (0, h / 2, e, h / 2), "g": (0, h / 2 - e / 2, w, e)}
-    peças, x = [], 0.0
-    for ch in txt:
-        if ch == ".":
-            peças.append(CrossSection.square((e, e)).translate((x, 0)))
-            x += e + 0.9
-            continue
-        for sname in SEG7[ch]:
-            sx, sy, sw, sh = seg[sname]
-            peças.append(CrossSection.square((sw, sh)).translate((x + sx, sy)))
-        x += w + 1.0
-    return CrossSection.batch_boolean(peças, OpType.Add)
-
-
-def pente(P, larg, dentes=8, alt=4.5, base=8.0, esp=2.4):
-    """Pente plano: 8 dentes a passo P (7 passos acumulados), etiqueta em relevo."""
-    comp = (dentes - 1) * P + 12
-    cs = [CrossSection.square((comp, base))]
-    for i in range(dentes):  # dente com perfil de O-ring (ponta arredondada)
-        x = 6 + i * P
-        cs.append(CrossSection.batch_hull([CrossSection.square((larg, 1)).translate((x - larg / 2, base - 0.5)),
-                                           CrossSection.circle(larg / 2, 32).translate((x, base + alt - larg / 2))]))
-    corpo = extr(CrossSection.batch_boolean(cs, OpType.Add), 0, esp)
-    etiqueta = extr(texto7(f"{P:.1f}", 5.0, 0.9).translate((2.5, 1.5)), esp, esp + 0.6)
-    return corpo + etiqueta
-
-
 def construir(a):
     Rb = a.crista / 2 + a.folga             # furo nas cristas
     Ro = Rb + a.parede                       # exterior do anel
-    w = a.oring - 2 * a.folga_oring          # largura da nervura (perfil de O-ring)
-    Rn = a.vale / 2 + 0.4                    # ponta da nervura: 0,4 mm acima do fundo do vale
+    w = a.guia_larg
+    Rn = a.crista / 2 - a.guia_prof          # ponta da guia
     r_tip = a.interior / 2 - a.sobrecorte    # ponta da lâmina
-    zt = a.passo + w / 2                     # meia espessura (nervura rente à face exterior)
+    zt = a.meia_esp                          # face exterior de cada metade
 
-    # anel em C de cada metade (z de 0 a zt; espelha-se para a metade B)
     anel = extr(c_perfil(Rb, Ro, a.abraco), 0, zt)
-    # nervura com perfil de O-ring: meia-cana Ø w centrada no vale a ±1 passo, revolvida no arco do C
+
+    # guia anular centrada no plano de corte: ponta arredondada Ø w, flancos ~50° até ao anel
     rc = Rn + w / 2
-    perfil = CrossSection.batch_hull([CrossSection.circle(w / 2, 64).translate((rc, a.passo)),
-                                      CrossSection.square((Rb + 0.3 - rc, w)).translate((rc, a.passo - w / 2))])
+    ch = 2.1                                  # avanço do flanco: largura extra na raiz da guia
+    perfil = CrossSection.batch_hull([
+        CrossSection.circle(w / 2, 64).translate((rc, 0)),
+        pol([(rc + 0.35, -w / 2), (Rb + 0.3, -w / 2 - ch), (Rb + 0.3, w / 2 + ch), (rc + 0.35, w / 2)]),
+    ])
     h0 = -90 + (360 - a.abraco) / 2
-    nerv = Manifold.revolve(perfil, SEG, a.abraco).rotate((0, 0, h0))
-    nerv = nerv ^ extr(c_perfil(Rn, Rb + 0.3, a.abraco, 3.0), 0, zt)
+    guia = Manifold.revolve(perfil, SEG, a.abraco).rotate((0, 0, h0))
+    guia = guia ^ extr(c_perfil(Rn, Rb + 0.3, a.abraco, 3.0), 0, zt)   # só z>=0 + chanfro de entrada
 
     # lâmina: ponta no topo (x=0), gume inclinado lam_ang em relação à tangente
     ang = math.radians(a.lam_ang)
@@ -165,73 +129,67 @@ def construir(a):
     bolso = lam.offset(0.2, JoinType.Miter)
 
     # parafusos M3 (coordenadas locais da lâmina: u ao longo do gume, v para as costas)
-    m = (a.lam_comp - a.lam_costas) / 2
-    furos_l = [(2.0, 14.0), (a.lam_comp / 2, a.lam_alt + 6.5), (a.lam_comp - 2.0, 14.0)]
-    furos = para_global(furos_l, tip, ang)
+    furos = para_global([(2.0, 14.0), (a.lam_comp / 2, a.lam_alt + 6.5), (a.lam_comp - 2.0, 14.0)], tip, ang)
     for x, y in furos:
         assert math.hypot(x, y) > Rb + 2.5, "furo M3 a invadir o furo do tubo"
 
     # alojamento = invólucro da lâmina + parafusos + topo do anel
-    pts = [p for p in para_global(lam_l, tip, ang)]
-    blocos = [pol(pts).offset(6.0, JoinType.Round)]
+    blocos = [lam.offset(6.0, JoinType.Round)]
     blocos += [CrossSection.circle(5.5, 48).translate(f) for f in furos]
     topo = [(Ro * math.cos(t), Ro * math.sin(t)) for t in np.linspace(math.radians(55), math.radians(125), 20)]
-    blocos.append(pol([(0, 0)] + topo).offset(0.01))
-    aloj2d = CrossSection.batch_hull(blocos)
-    aloj = extr(aloj2d, 0, zt) - Manifold.cylinder(3 * zt, Rb, Rb, SEG).translate((0, 0, -zt))
+    blocos.append(pol([(0, 0)] + topo))
+    aloj = extr(CrossSection.batch_hull(blocos), 0, zt) - Manifold.cylinder(3 * zt, Rb, Rb, SEG).translate((0, 0, -zt))
 
-    meia = anel + aloj + nerv
+    meia = anel + aloj + guia
 
-    # furação M3: passagem 3,4; cabeça Ø6 x 3,2 (A); porca 5,5 sextavada x 2,6 (B)
-    fur = Manifold()
-    cab = Manifold()
-    porca = Manifold()
+    # furação M3: passagem Ø3,4; escareado Ø6,2 na A; porca sextavada 5,5 x 2,6 na B
+    L_paraf = 2 * math.floor((2 * zt - 3.2) / 2)       # comprimento comercial (par) que cabe
+    cb = 2 * zt - L_paraf - 0.6                         # ponta fica 0,6 dentro da face B -> 2 mm de rosca na porca
+    fur, cab, porca = Manifold(), Manifold(), Manifold()
     for x, y in furos:
         fur += Manifold.cylinder(3 * zt, 1.7, 1.7, 32).translate((x, y, -zt))
-        cab += Manifold.cylinder(3.3, 3.1, 3.1, 40).translate((x, y, zt - 3.2))
+        cab += Manifold.cylinder(cb + 0.1, 3.1, 3.1, 40).translate((x, y, zt - cb))
         porca += Manifold.cylinder(2.7, 3.25, 3.25, 6).translate((x, y, zt - 2.6))
     meia = meia - fur
 
-    # seta do sentido de rotação gravada na face exterior (0,6 mm)
+    # seta do sentido de rotação gravada na face exterior da A (0,6 mm)
     cx, cy = para_global([(a.lam_comp / 2 - 2, a.lam_alt / 2)], tip, ang)[0]
-    seta = pol([(-9, -1.2), (3, -1.2), (3, -3.5), (9, 0), (3, 3.5), (3, 1.2), (-9, 1.2)])
-    seta = seta.translate((cx, cy))  # aponta +X no topo = sentido horário visto pela face A
+    seta = pol([(-9, -1.2), (3, -1.2), (3, -3.5), (9, 0), (3, 3.5), (3, 1.2), (-9, 1.2)]).translate((cx, cy))
     grav = extr(seta, zt - 0.6, zt + 1)
 
     A = meia - cab - extr(bolso, -1, a.lam_esp) - grav
     B = meia - porca
     lam3d = extr(lam, 0, a.lam_esp)
 
-    # posições de impressão: face exterior na mesa, junta para cima
+    # impressão: face exterior na mesa, junta (e rebaixo) para cima
     A_print = A.mirror((0, 0, 1)).translate((0, 0, zt))
     B_print = B.mirror((0, 0, 1)).translate((0, 0, zt))
 
-    # teste: anel sem alojamento (crista, vale, encaixe) + pentes de passo 7,0..10,0
-    teste_anel = (anel + nerv).mirror((0, 0, 1)).translate((0, 0, zt))
-    pentes = Manifold()
-    for k, P in enumerate(PASSOS_TESTE):
-        pentes += pente(P, w).translate((Ro + 8, Ro - 14 - k * 14.5, 0))
-    teste = teste_anel + pentes
-
-    info = dict(Rb=Rb, Ro=Ro, Rn=Rn, nervura=w, r_tip=r_tip, zt=zt, furos=furos,
-                parafuso_M3=f"M3x{math.floor((2 * zt - 3.2) / 2) * 2}",
-                pen=(a.vale / 2) - r_tip)
-    return A, B, lam3d, A_print, B_print, teste, info
+    info = dict(furo_cristas=2 * Rb, ponta_guia_Ø=2 * Rn, ponta_lamina_Ø=2 * r_tip,
+                lamina_exposta_mm=Rn - r_tip, espessura_total=2 * zt,
+                parafuso=f"M3x{L_paraf} DIN 912 + porca (escareado {cb:.1f} mm)")
+    return A, B, lam3d, A_print, B_print, info
 
 
 def main():
     a = args()
-    A, B, lam3d, A_p, B_p, teste, info = construir(a)
+    A, B, lam3d, A_p, B_p, info = construir(a)
     out = a.saida
     stl(A_p, os.path.join(out, "meia_A.stl"))
     stl(B_p, os.path.join(out, "meia_B.stl"))
-    stl(teste, os.path.join(out, "teste_encaixe.stl"))
-    # montagem (B espelhada para z<0) só para visualizar
-    stl(A + B.mirror((0, 0, 1)) , os.path.join(out, "_montagem_vis.stl"))
+    # prato único: A em cima, B em baixo (cabe numa mesa de 180 x 180)
+    bA, bB = A_p.bounding_box(), B_p.bounding_box()
+    prato = A_p + B_p.translate((0, bA[1] - bB[4] - 6, 0))
+    bp = prato.bounding_box()
+    prato = prato.translate((-(bp[0] + bp[3]) / 2, -(bp[1] + bp[4]) / 2, 0))
+    stl(prato, os.path.join(out, "prato_A_B.stl"))
+    bp = prato.bounding_box()
+    print(f"prato_A_B: {bp[3]-bp[0]:.0f} x {bp[4]-bp[1]:.0f} mm")
+    stl(A + B.mirror((0, 0, 1)), os.path.join(out, "_montagem_vis.stl"))
     stl(lam3d, os.path.join(out, "_lamina_vis.stl"))
     for k, v in info.items():
-        print(k, v)
-    for nome, m in (("A", A_p), ("B", B_p), ("teste", teste)):
+        print(f"{k}: {v:.2f}" if isinstance(v, float) else f"{k}: {v}")
+    for nome, m in (("A", A_p), ("B", B_p)):
         bb = m.bounding_box()
         print(nome, "vol %.1f cm3" % (m.volume() / 1000), "bbox", [round(x, 1) for x in bb],
               "genus", m.genus(), "status", m.status())
