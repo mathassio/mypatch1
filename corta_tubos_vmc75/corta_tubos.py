@@ -4,7 +4,7 @@
 Gera STL para impressão 3D (PETG/ASA):
   meia_A.stl        metade com alojamento da lâmina (cara de junta para cima)
   meia_B.stl        metade tampa
-  teste_encaixe.stl anel curto + pente de passo, para validar medidas antes do resto
+  teste_encaixe.stl anel com nervura + 7 pentes de passo (7,0-10,0), para validar medidas
 
 Conceito: o corpo é dividido no plano de corte. A lâmina trapezoidal de x-ato
 (61 x 19 x 0,6 mm) fica entalada entre as duas metades, num rebaixo da metade A, e
@@ -101,6 +101,40 @@ def stl(man, path):
 
 
 # ---------------------------------------------------------------- modelo
+# ---------------------------------------------------------------- pentes de passo
+PASSOS_TESTE = [7.0, 7.5, 8.0, 8.5, 9.0, 9.5, 10.0]
+SEG7 = {"0": "abcdef", "1": "bc", "2": "abged", "3": "abgcd", "4": "fgbc", "5": "afgcd",
+        "6": "afgedc", "7": "abc", "8": "abcdefg", "9": "abcdfg"}
+
+
+def texto7(txt, h=5.0, e=0.9):
+    """Texto em 7 segmentos (só dígitos e ponto), canto inferior esquerdo em (0,0)."""
+    w = h * 0.55
+    seg = {"a": (0, h - e, w, e), "b": (w - e, h / 2, e, h / 2), "c": (w - e, 0, e, h / 2),
+           "d": (0, 0, w, e), "e": (0, 0, e, h / 2), "f": (0, h / 2, e, h / 2), "g": (0, h / 2 - e / 2, w, e)}
+    peças, x = [], 0.0
+    for ch in txt:
+        if ch == ".":
+            peças.append(CrossSection.square((e, e)).translate((x, 0)))
+            x += e + 0.9
+            continue
+        for sname in SEG7[ch]:
+            sx, sy, sw, sh = seg[sname]
+            peças.append(CrossSection.square((sw, sh)).translate((x + sx, sy)))
+        x += w + 1.0
+    return CrossSection.batch_boolean(peças, OpType.Add)
+
+
+def pente(P, dentes=8, larg=1.6, alt=4.0, base=8.0, esp=2.4):
+    """Pente plano: 8 dentes a passo P (7 passos acumulados), etiqueta em relevo."""
+    comp = (dentes - 1) * P + 12
+    cs = [CrossSection.square((comp, base))]
+    cs += [CrossSection.square((larg, alt + 0.5)).translate((6 + i * P - larg / 2, base - 0.5)) for i in range(dentes)]
+    corpo = extr(CrossSection.batch_boolean(cs, OpType.Add), 0, esp)
+    etiqueta = extr(texto7(f"{P:.1f}", 5.0, 0.9).translate((2.5, 1.5)), esp, esp + 0.6)
+    return corpo + etiqueta
+
+
 def construir(a):
     Rb = a.crista / 2 + a.folga             # furo nas cristas
     Ro = Rb + a.parede                       # exterior do anel
@@ -164,15 +198,12 @@ def construir(a):
     A_print = A.mirror((0, 0, 1)).translate((0, 0, zt))
     B_print = B.mirror((0, 0, 1)).translate((0, 0, zt))
 
-    # teste: anel sem alojamento + pente de 6 dentes (5 passos)
+    # teste: anel sem alojamento (crista, vale, encaixe) + pentes de passo 7,0..10,0
     teste_anel = (anel + nerv).mirror((0, 0, 1)).translate((0, 0, zt))
-    prof = (a.crista - a.vale) / 2 - 0.5
-    dentes = [CrossSection.square((a.nervura, prof + 0.5)).translate((i * a.passo - a.nervura / 2, -0.5))
-              for i in range(6)]
-    base = CrossSection.square((5 * a.passo + 12, 8)).translate((-6, -8))
-    pente = extr(CrossSection.batch_boolean([base] + dentes, OpType.Add), 0, 3)
-    pente = pente.translate((-2.5 * a.passo, -Ro - 25, 0))
-    teste = teste_anel + pente
+    pentes = Manifold()
+    for k, P in enumerate(PASSOS_TESTE):
+        pentes += pente(P).translate((Ro + 8, Ro - 14 - k * 14.5, 0))
+    teste = teste_anel + pentes
 
     info = dict(Rb=Rb, Ro=Ro, Rn=Rn, r_tip=r_tip, zt=zt, furos=furos,
                 pen=(a.vale / 2) - r_tip)
