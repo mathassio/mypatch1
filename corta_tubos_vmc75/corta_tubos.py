@@ -8,7 +8,8 @@ Gera STL para impressão 3D (PETG/ASA):
 
 Conceito: o corpo é dividido no plano de corte. A lâmina trapezoidal de x-ato
 (61 x 19 x 0,6 mm) fica entalada entre as duas metades, num rebaixo da metade A, e
-3 parafusos M3 fecham o conjunto. Duas nervuras entram nos vales vizinhos (±1 passo)
+3 parafusos M3 fecham o conjunto. Duas nervuras com o perfil do O-ring de vedação
+entram nos vales vizinhos (±1 passo)
 e mantêm o corte perpendicular. Encaixa-se o tubo lateralmente, a ponta da lâmina
 fura o vale e depois roda-se a ferramenta no sentido da seta.
 
@@ -36,8 +37,8 @@ def args():
     p.add_argument("--folga", type=float, default=0.4, help="folga radial nas cristas [mm]")
     p.add_argument("--parede", type=float, default=5.0, help="espessura radial do anel [mm]")
     p.add_argument("--abraco", type=float, default=210.0, help="ângulo abraçado pelo C [°]")
-    p.add_argument("--nervura", type=float, default=1.8, help="largura da ponta da nervura [mm]")
-    p.add_argument("--nervura_base", type=float, default=3.0, help="largura da base da nervura [mm]")
+    p.add_argument("--oring", type=float, default=4.0, help="corda do O-ring de vedação que assenta no vale [mm]")
+    p.add_argument("--folga_oring", type=float, default=0.2, help="folga por lado da nervura no vale [mm]")
     p.add_argument("--sobrecorte", type=float, default=0.6, help="quanto a ponta passa o Ø interior [mm]")
     # --- lâmina trapezoidal standard ---
     p.add_argument("--lam_comp", type=float, default=61.0)
@@ -125,11 +126,14 @@ def texto7(txt, h=5.0, e=0.9):
     return CrossSection.batch_boolean(peças, OpType.Add)
 
 
-def pente(P, dentes=8, larg=1.6, alt=4.0, base=8.0, esp=2.4):
+def pente(P, larg, dentes=8, alt=4.5, base=8.0, esp=2.4):
     """Pente plano: 8 dentes a passo P (7 passos acumulados), etiqueta em relevo."""
     comp = (dentes - 1) * P + 12
     cs = [CrossSection.square((comp, base))]
-    cs += [CrossSection.square((larg, alt + 0.5)).translate((6 + i * P - larg / 2, base - 0.5)) for i in range(dentes)]
+    for i in range(dentes):  # dente com perfil de O-ring (ponta arredondada)
+        x = 6 + i * P
+        cs.append(CrossSection.batch_hull([CrossSection.square((larg, 1)).translate((x - larg / 2, base - 0.5)),
+                                           CrossSection.circle(larg / 2, 32).translate((x, base + alt - larg / 2))]))
     corpo = extr(CrossSection.batch_boolean(cs, OpType.Add), 0, esp)
     etiqueta = extr(texto7(f"{P:.1f}", 5.0, 0.9).translate((2.5, 1.5)), esp, esp + 0.6)
     return corpo + etiqueta
@@ -138,16 +142,20 @@ def pente(P, dentes=8, larg=1.6, alt=4.0, base=8.0, esp=2.4):
 def construir(a):
     Rb = a.crista / 2 + a.folga             # furo nas cristas
     Ro = Rb + a.parede                       # exterior do anel
-    Rn = a.vale / 2 + 1.0                    # ponta das nervuras (1 mm acima do fundo do vale)
+    w = a.oring - 2 * a.folga_oring          # largura da nervura (perfil de O-ring)
+    Rn = a.vale / 2 + 0.4                    # ponta da nervura: 0,4 mm acima do fundo do vale
     r_tip = a.interior / 2 - a.sobrecorte    # ponta da lâmina
-    zt = a.passo + a.nervura / 2             # meia espessura (face exterior)
+    zt = a.passo + w / 2                     # meia espessura (nervura rente à face exterior)
 
     # anel em C de cada metade (z de 0 a zt; espelha-se para a metade B)
     anel = extr(c_perfil(Rb, Ro, a.abraco), 0, zt)
-    rib_z0 = a.passo - a.nervura / 2 - (a.nervura_base - a.nervura)
-    # nervura: ponta estreita + degrau de base mais largo (degraus virados para cima: sem suportes)
-    nerv = (extr(c_perfil(Rn, Rb + 0.3, a.abraco, 3.0), a.passo - a.nervura / 2, zt)
-            + extr(c_perfil(Rb - 1.2, Rb + 0.3, a.abraco, 3.0), rib_z0, zt))
+    # nervura com perfil de O-ring: meia-cana Ø w centrada no vale a ±1 passo, revolvida no arco do C
+    rc = Rn + w / 2
+    perfil = CrossSection.batch_hull([CrossSection.circle(w / 2, 64).translate((rc, a.passo)),
+                                      CrossSection.square((Rb + 0.3 - rc, w)).translate((rc, a.passo - w / 2))])
+    h0 = -90 + (360 - a.abraco) / 2
+    nerv = Manifold.revolve(perfil, SEG, a.abraco).rotate((0, 0, h0))
+    nerv = nerv ^ extr(c_perfil(Rn, Rb + 0.3, a.abraco, 3.0), 0, zt)
 
     # lâmina: ponta no topo (x=0), gume inclinado lam_ang em relação à tangente
     ang = math.radians(a.lam_ang)
@@ -202,10 +210,11 @@ def construir(a):
     teste_anel = (anel + nerv).mirror((0, 0, 1)).translate((0, 0, zt))
     pentes = Manifold()
     for k, P in enumerate(PASSOS_TESTE):
-        pentes += pente(P).translate((Ro + 8, Ro - 14 - k * 14.5, 0))
+        pentes += pente(P, w).translate((Ro + 8, Ro - 14 - k * 14.5, 0))
     teste = teste_anel + pentes
 
-    info = dict(Rb=Rb, Ro=Ro, Rn=Rn, r_tip=r_tip, zt=zt, furos=furos,
+    info = dict(Rb=Rb, Ro=Ro, Rn=Rn, nervura=w, r_tip=r_tip, zt=zt, furos=furos,
+                parafuso_M3=f"M3x{math.floor((2 * zt - 3.2) / 2) * 2}",
                 pen=(a.vale / 2) - r_tip)
     return A, B, lam3d, A_print, B_print, teste, info
 

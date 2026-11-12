@@ -44,13 +44,14 @@ s.append(tab([
     ["Ø vale", "Linha de costura no fundo de um vale; marcar e medir", "65,5", "P = ______ mm", "______"],
     ["Ø interior", "Paquímetro na ponta do tubo, em 2 direcções a 90°", "62,5", "______ / ______", "média ______"],
     ["Passo", "Régua sobre 10 ondas (vale a vale) ÷ 10", "8,0", "L10 = ______ mm", "p = ______"],
+    ["Corda do O-ring", "Paquímetro na secção do O-ring de vedação da união (define a nervura)", "4,0", "______ mm", "—"],
     ["Lâmina", "Comprimento × altura × espessura", "61 × 19 × 0,6", "____ × ____ × ____", "—"],
 ], [22, 74, 20, 32, 30]))
 
 s.append(Paragraph("2. Impressão do teste", H2))
 s.append(tab([
     ["Ficheiro", "Conteúdo", "Definições"],
-    ["teste_encaixe.stl", "Anel em C com nervura (meia ferramenta, sem lâmina) + 7 pentes de passo "
+    ["teste_encaixe.stl", "Anel em C com nervura em perfil de O-ring (meia ferramenta, sem lâmina) + 7 pentes de passo "
      "7,0 / 7,5 / 8,0 / 8,5 / 9,0 / 9,5 / 10,0 mm", "Camada 0,2 · 4 perímetros · 30 % de enchimento · "
      "sem suportes · peças já orientadas · área de 177 × 101 mm"],
 ], [34, 76, 68]))
@@ -72,7 +73,7 @@ s.append(tab([
     ["Encaixe demasiado duro / pontas fissuram", "--abraco 200 (menos abraço) ou --folga 0.6"],
     ["Encaixe solto / sai sozinho", "--abraco 220 ou --folga 0.2"],
     ["Abana radialmente", "--crista com o valor medido; --folga 0.2"],
-    ["Nervura não entra no vale", "--vale com o valor medido; --nervura 1.4"],
+    ["Nervura não entra no vale", "--oring com a corda medida; --folga_oring 0.3; --vale com o valor medido"],
     ["Nenhum pente encaixa", "Medir L10 com régua; usar --passo L10/10 e reimprimir só o teste"],
 ], [80, 98]))
 

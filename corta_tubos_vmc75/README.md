@@ -12,7 +12,7 @@
 
 PETG ou ASA · camada 0,2 mm · 4 perímetros · 30–40 % de enchimento · **sem suportes** (nervuras e degraus virados para cima).
 
-Ferragens: 1 lâmina trapezoidal de x-ato standard (61 × 19 × 0,6 mm) e 3 parafusos M3 × 14 (DIN 912) com porcas M3.
+Ferragens: 1 lâmina trapezoidal de x-ato standard (61 × 19 × 0,6 mm) e 3 parafusos M3 × 16 (DIN 912) com porcas M3.
 
 ## Medidas assumidas (CONFIRMAR com paquímetro)
 
@@ -22,12 +22,13 @@ Ferragens: 1 lâmina trapezoidal de x-ato standard (61 × 19 × 0,6 mm) e 3 para
 | `--vale` Ø exterior no fundo do vale | 65,5 | estimado |
 | `--interior` Ø interior | 62,5 | ficha Heatpex Aria |
 | `--passo` passo do corrugado | 8,0 | **estimado: medir 10 passos e dividir por 10** |
+| `--oring` corda do O-ring de vedação | 4,0 | indicado; medir o O-ring da união |
 
 Gerar de novo com as medidas reais:
 
 ```
 pip install manifold3d numpy
-python3 corta_tubos.py --crista 75.8 --vale 65.2 --interior 62.5 --passo 8.4
+python3 corta_tubos.py --crista 75.8 --vale 65.2 --interior 62.5 --passo 8.4 --oring 4.0
 ```
 
 ## Validação com a peça de teste (ver `ficha_teste.pdf`)
@@ -39,7 +40,7 @@ python3 corta_tubos.py --crista 75.8 --vale 65.2 --interior 62.5 --passo 8.4
 
 1. Pouse a lâmina no rebaixo da metade A, com o gume virado para o tubo. A ponta fica dentro do C.
 2. Feche com a metade B. Coloque as porcas nos sextavados de B e aperte os 3 parafusos M3.
-3. Encaixe o tubo de lado. As nervuras entram nos vales vizinhos e a ponta da lâmina fura o vale central.
+3. Encaixe o tubo de lado. As nervuras, com o perfil do O-ring de vedação (meia-cana, corda − 2 × 0,2 mm), entram nos vales vizinhos e a ponta da lâmina fura o vale central.
 4. Rode a ferramenta no **sentido da seta gravada** (horário, visto pela metade A). Uma a duas voltas chegam.
 5. Quando a lâmina perder o fio, vire-a ao contrário para usar o outro canto. Depois, substitua-a.
 
